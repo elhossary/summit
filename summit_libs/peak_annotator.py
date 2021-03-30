@@ -190,15 +190,17 @@ class PeakAnnotator:
         df_in.reset_index(inplace=True, drop=True)
         df_len = df_in.shape[0]
         i = 0
+        loop_breaker = 0
         while i < df_len:
+            loop_breaker += 1
             for j in range(i + 1, df_len, 1):
-                if df_in.at[i, "interval"].overlaps(df_in.at[j, "interval"]):
+                if df_in.at[j, "interval"].overlaps(df_in.at[i, "interval"]):
                     df_in.at[i, "group"], df_in.at[j, "group"] = i, i
                 else:
-                    i = j + 1
+                    i = j
                     break
-            if i == df_len - 1:
-                i += 1
+            if loop_breaker > df_len:
+                break
         df_in["group"].fillna(df_in.index.to_series(), downcast='infer', inplace=True)
         df_in.drop(["interval"], inplace=True, axis=1)
         return df_in
