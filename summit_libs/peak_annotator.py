@@ -34,7 +34,7 @@ class PeakAnnotator:
             tmp_df = self.generate_locs(self.arr_dict[seqid_key],
                                         True if self.wig_orient == "r" else False,
                                         self.cond_name)
-            print(f"Possible peaks for {self.cond_name}: {tmp_df.shape[0]}")
+            print(f"Possible {tmp_df.shape[0]} peaks for {self.cond_name}")
             # Score the generated positions
             tmp_df = self.generate_position_score(tmp_df)
             # Filter low scored and Select best from candidates
@@ -42,7 +42,7 @@ class PeakAnnotator:
             # Group overlaps
             tmp_df = self.group_df_rows_by_interval(tmp_df)
             # Select best from overlaps
-            #tmp_df = self.select_annotations(tmp_df)
+            tmp_df = self.select_annotations(tmp_df)
             # append
             tmp_df["seqid"] = seqid_key
             out_df = out_df.append(tmp_df, ignore_index=True)
@@ -63,7 +63,6 @@ class PeakAnnotator:
         forward_bg_func = lambda pos: mean(coverage_array[pos + 1:pos + 6, raw_coverage_col].tolist())
 
         ## Find peaks
-        # min_wid = (self.args.step_size * 2) - 1
         rising_peaks, rising_peaks_props = find_peaks(coverage_array[:, rising_col], distance=5)
         falling_peaks, falling_peaks_props = find_peaks(coverage_array[:, falling_col], distance=5)
         rising_peaks_list = rising_peaks.tolist()
@@ -87,6 +86,8 @@ class PeakAnnotator:
                 fp_cov = cov_func(upper_loc)
                 lower_loc = lower_loc - 1 if rp_cov * 0.50 < cov_func(lower_loc - 1) else lower_loc
                 upper_loc = upper_loc + 1 if fp_cov * 0.50 < cov_func(upper_loc + 1) else upper_loc
+                if rp_cov == 0 or fp_cov == 0:
+                    continue
                 if min([rp_cov, fp_cov]) / max([rp_cov, fp_cov]) < 0.10:
                     continue
                 cover_range = cov_range_func([lower_loc, upper_loc])
@@ -129,23 +130,16 @@ class PeakAnnotator:
 
     def select_annotations(self, locs_df):
         print(f"Selecting best candidates for: {self.cond_name}")
-        out_df = pd.DataFrame()
-        end_id = locs_df.columns.get_loc('end')
         groups = locs_df["group"].unique().tolist()
         for group in groups:
             group_df = locs_df[locs_df["group"] == group].copy()
             if group_df.shape[0] == 1:
-                out_df.append(group_df.iloc[0])
                 continue
-            #group_df = group_df[group_df["nodes_ratio"] > 0.49].copy()
-            if group_df.empty:
-                continue
-            group_df.sort_values(["start", "end"], inplace=True, ascending=[True, False])
-            #group_count = group_df.shape[0]
-            if group_df.iat[0, end_id] > any(group_df["end"].tolist()):
-                group_df = group_df.iloc[1:]
-            out_df.append(group_df, ignore_index=True)
-        return out_df
+            locs_df.drop(group_df.index, inplace=True)
+            group_df.sort_values(["score", "position_length"], inplace=True, ascending=[False, False])
+            locs_df = locs_df.append(group_df.iloc[0])
+        print(f"\t {locs_df.shape[0]} selected peak annotations for: {self.cond_name}")
+        return locs_df
 
     def generate_position_score(self, df):
         print(f"Scoring annotations for: {self.cond_name}")
@@ -169,14 +163,11 @@ class PeakAnnotator:
                 tmp_df.iloc[0, score_col_id] += 1
                 tmp_df.sort_values([sort_key, "fp_cov"], inplace=True, ascending=[True, False])
                 tmp_df.iloc[0, score_col_id] += 1
-                #tmp_df.sort_values([sort_key, "percentiles"], inplace=True, ascending=[True, False])
-                #tmp_df.iloc[0, score_col_id] += 1
-                #tmp_df.iloc[-1, score_col_id] -= 1
                 df = df.append(tmp_df)
         return df
 
     def filter_best_candidates(self, df):
-        print(f"Filtering best candidates for: {self.cond_name}")
+        print(f"Filtering valid candidates for: {self.cond_name}")
         for sort_key in ["start", "end"]:
             key_sorted = df[sort_key].unique().tolist()
             # group_df.sort_values(["start", "enrichment"], inplace=True, ascending=False)
@@ -186,27 +177,29 @@ class PeakAnnotator:
                 x = tmp[tmp['score'] == max_score].copy()
                 df.drop(tmp.index, inplace=True)
                 df = df.append(x)
+        print(f"\t {df.shape[0]} valid peak annotations for: {self.cond_name}")
         return df
 
     def group_df_rows_by_interval(self, df_in):
         print(f"Grouping overlapping annotations for: {self.cond_name}")
         interval_func = lambda row: pd.Interval(left=row["start"], right=row["end"])
-        df_in.sort_values(['strand', 'start', 'end'], inplace=True)
+        df_in.sort_values(['strand', 'start', 'end'], inplace=True, ascending=[True, True, False])
         df_in.reset_index(inplace=True, drop=True)
         df_in["interval"] = df_in.apply(func=interval_func, axis=1)
-        df_in["group"] = None
-        counter = 0
-        for i in df_in.index:
-            try:
-                if df_in.at[i, "interval"].overlaps(df_in.at[i + 1, "interval"]):
-                    df_in.at[i, "group"] = counter
-                    df_in.at[i + 1, "group"] = counter
+        df_in["group"] = np.nan
+        df_in.reset_index(inplace=True, drop=True)
+        df_len = df_in.shape[0]
+        i = 0
+        while i < df_len:
+            for j in range(i + 1, df_len, 1):
+                if df_in.at[i, "interval"].overlaps(df_in.at[j, "interval"]):
+                    df_in.at[i, "group"], df_in.at[j, "group"] = i, i
                 else:
-                    df_in.at[i, "group"] = counter
-                    counter += 1
-                    df_in.at[i + 1, "group"] = counter
-            except:
-                pass
+                    i = j + 1
+                    break
+            if i == df_len - 1:
+                i += 1
+        df_in["group"].fillna(df_in.index.to_series(), downcast='infer', inplace=True)
         df_in.drop(["interval"], inplace=True, axis=1)
         return df_in
 

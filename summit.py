@@ -10,18 +10,27 @@ def main():
     #np.set_printoptions(suppress=True)
     logger.info("Reading user arguments")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--refseqs_in", required=True, help="", type=str, nargs="+")
-    parser.add_argument("--wigs_in", required=True, help="", type=str, nargs="+")
-    parser.add_argument("--condition_names", required=True, help="", type=str, nargs="+")
-    parser.add_argument("--min_len", default=30, help="", type=int)
-    parser.add_argument("--max_len", default=300, help="", type=int)
-    parser.add_argument("--step_size", default=3, help="", type=int)
-    parser.add_argument("--threads", default=2, help="", type=int)
-    parser.add_argument("--ignore_coverage", default=10, help="", type=int)
-    parser.add_argument("--annotation_type", required=True, help="", type=str)
-    parser.add_argument("--separate_conditions", default=False, help="", action='store_true')
-    parser.add_argument("--report", default="best", help="", choices=["all", "best", "longest", "shortest"])
-    parser.add_argument("--gff_out", required=True, help="", type=str)
+    parser.add_argument("--refseqs_in", required=True, type=str, nargs="+",
+                        help="Fasta files for the reference sequence (space separated)")
+    parser.add_argument("--wigs_in", required=True, type=str, nargs="+",
+                        help="Wiggle files (space separated)")
+    parser.add_argument("--condition_names", required=False, type=str, nargs="+",
+                        help="Condition names, must be part of the mentioned name inside the files (space separated)")
+    parser.add_argument("--min_len", default=30, type=int,
+                        help="Minimum allowed annotation length")
+    parser.add_argument("--max_len", default=300, type=int,
+                        help="Maximum allowed annotation length")
+    parser.add_argument("--step_size", default=3, type=int,
+                        help="Derivative range")
+    parser.add_argument("--threads", default=4, type=int,
+                        help="Parallel file processors")
+    parser.add_argument("--ignore_coverage", default=10, type=int,
+                        help="Ignore coverage up to")
+    parser.add_argument("--annotation_type", required=True, type=str,
+                        help="Specify a name for the annotation type")
+    parser.add_argument("--separate_conditions", default=False, action='store_true',
+                        help="Generates annotations per each condition separately without merging")
+    parser.add_argument("--gff_out", required=True, type=str, help="")
     args = parser.parse_args()
     logger.info("Getting list of files")
     refseq_paths = []
@@ -36,12 +45,12 @@ def main():
 
     wig_pool = mp.Pool(processes=args.threads)
     processes = []
-    count = 0
+    #count = 0
     for wig_path in wig_paths:
-        count += 1
+        #count += 1
         processes.append(wig_pool.apply_async(process_single_wiggle, args=(wig_path, refseq_paths, args)))
-        if count == 2:
-            break
+        #if count == 2:
+        #    break
 
     wiggles_processed = [p.get() for p in processes]
     wig_pool.close()
