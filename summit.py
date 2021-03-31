@@ -1,4 +1,7 @@
 from summit_libs.peak_annotator import PeakAnnotator
+from summit_libs.annotation_exporter import AnnotationExporter
+from summit_libs.conditions_merger import ConditionsMerger
+
 import logging as logger
 import argparse
 import glob
@@ -14,15 +17,13 @@ def main():
                         help="Fasta files for the reference sequence (space separated)")
     parser.add_argument("--wigs_in", required=True, type=str, nargs="+",
                         help="Wiggle files (space separated)")
-    parser.add_argument("--condition_names", required=False, type=str, nargs="+",
-                        help="Condition names, must be part of the mentioned name inside the files (space separated)")
     parser.add_argument("--min_len", default=30, type=int,
                         help="Minimum allowed annotation length")
     parser.add_argument("--max_len", default=300, type=int,
                         help="Maximum allowed annotation length")
     parser.add_argument("--step_size", default=3, type=int,
                         help="Derivative range")
-    parser.add_argument("--threads", default=4, type=int,
+    parser.add_argument("--threads", default=6, type=int,
                         help="Parallel file processors")
     parser.add_argument("--ignore_coverage", default=10, type=int,
                         help="Ignore coverage up to")
@@ -30,6 +31,9 @@ def main():
                         help="Specify a name for the annotation type")
     parser.add_argument("--separate_conditions", default=False, action='store_true',
                         help="Generates annotations per each condition separately without merging")
+    parser.add_argument("--merge_length_violation", default=False, choices=["allow", "remove", "no_merge"],
+                        help="This allows the max_len to be violated if the length after merging is longer")
+
     parser.add_argument("--gff_out", required=True, type=str, help="")
     args = parser.parse_args()
     logger.info("Getting list of files")
@@ -45,12 +49,9 @@ def main():
 
     wig_pool = mp.Pool(processes=args.threads)
     processes = []
-    #count = 0
+
     for wig_path in wig_paths:
-        #count += 1
         processes.append(wig_pool.apply_async(process_single_wiggle, args=(wig_path, refseq_paths, args)))
-        #if count == 2:
-        #    break
 
     wiggles_processed = [p.get() for p in processes]
     wig_pool.close()
@@ -61,9 +62,9 @@ def main():
     all_locs.reset_index(inplace=True, drop=True)
 
     if not args.separate_conditions:
-        all_locs = PeakAnnotator.merge_overlaps(all_locs)
-
-    PeakAnnotator.export_to_gff(all_locs, args)
+        all_locs, unmerged_locs = ConditionsMerger(all_locs, args).merge()
+        AnnotationExporter(unmerged_locs, args).export("unmerged")
+    AnnotationExporter(all_locs, args).export()
 
 
 def process_single_wiggle(wig_path, refseq_paths, args):

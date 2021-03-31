@@ -4,9 +4,7 @@ from functools import reduce
 from Bio import SeqIO
 import os
 import logging as logger
-import multiprocessing as mp
 from scipy.signal import find_peaks
-from scipy import stats
 from statistics import mean
 import sys
 import pandas as pd
@@ -47,6 +45,11 @@ class PeakAnnotator:
             tmp_df["seqid"] = seqid_key
             out_df = out_df.append(tmp_df, ignore_index=True)
         out_df.reset_index(inplace=True, drop=True)
+        round_cols_dict = {"coverage_mean": 1, "background_mean": 1, "bg_cov_diff": 1,
+                           "enrichment": 1, "rp_cov": 1, "fp_cov": 1,
+                           "max_cov": 1, "min_cov": 1, "min_max_ratio": 1,
+                           "len_enrich_ratio": 1, "mean_max_ratio": 1}
+        out_df = out_df.round(round_cols_dict)
         return out_df
 
     def generate_locs(self, coverage_array, is_reversed, cond_name):
@@ -202,7 +205,7 @@ class PeakAnnotator:
             if loop_breaker > df_len:
                 break
         df_in["group"].fillna(df_in.index.to_series(), downcast='infer', inplace=True)
-        df_in.drop(["interval"], inplace=True, axis=1)
+        #df_in.drop(["interval"], inplace=True, axis=1)
         return df_in
 
     def transform_wiggle(self, wig_obj):
@@ -235,48 +238,3 @@ class PeakAnnotator:
                                  "fasta": os.path.basename(fasta_path)})
             logger.info(f"Chrom sizes added")
         return ret_list
-
-    @staticmethod
-    def export_to_gff(df, args):
-        strand_letter_func = lambda x: "F" if x == "+" else "R"
-        col_names = ["seqid", "source", "type", "start", "end", "score", "strand", "phase", "attributes"]
-        cond_names = set(args.condition_names)
-        peaks_gff_df = pd.DataFrame(columns=col_names)
-        for i in df.index:
-            cond = ""
-            for c in cond_names:
-                if c in df.at[i, 'condition_name']:
-                    cond = c
-                    break
-            attr = f"ID={df.at[i, 'seqid']}_{strand_letter_func(df.at[i, 'strand'])}_{i}" \
-                   f";Name={df.at[i, 'seqid']}_{strand_letter_func(df.at[i, 'strand'])}_{cond}_{args.annotation_type}_{i}" \
-                   f";seq_len={df.at[i, 'position_length']}" \
-                   f";condition={cond}" \
-                   f";average_coverage={round(df.at[i, 'coverage_mean'], 2)}" \
-                   f";background_average_coverage={round(df.at[i, 'background_mean'], 2)}" \
-                   f";mean_max_ratio={str(df.at[i, 'mean_max_ratio'])}" \
-                   f";enrichment={round(df.at[i, 'enrichment'], 2)}".replace("__", "_")
-            peaks_gff_df = peaks_gff_df.append({"seqid": df.at[i, "seqid"],
-                                                "source": "SUMMIT",
-                                                "type": args.annotation_type,
-                                                "start": df.at[i, "start"],
-                                                "end": df.at[i, "end"],
-                                                "score": df.at[i, "score"],
-                                                "strand": df.at[i, "strand"],
-                                                "phase": ".",
-                                                "attributes": attr}, ignore_index=True)
-        print("Filtering by length")
-        peaks_gff_df["len"] = peaks_gff_df["end"] - peaks_gff_df["start"] + 1
-        len_range = range(args.min_len, args.max_len + 1, 1)
-        peaks_gff_df = peaks_gff_df[peaks_gff_df["len"].isin(len_range)]
-        peaks_stats = peaks_gff_df["len"].describe(include='all')
-        peaks_gff_df.drop("len", axis=1, inplace=True)
-        print("Sorting annotated peaks")
-        peaks_gff_df.sort_values(["seqid", "start", "end"], inplace=True)
-        print(f"Total {peaks_stats['count']} peaks predicted, exporting to GFF")
-        # f"median and average lengths: {peaks_stats['median']} and {peaks_stats['mean']}, exporting to GFF")
-        peaks_gff_df.to_csv(os.path.abspath(args.gff_out), sep="\t", header=False, index=False)
-
-    @staticmethod
-    def merge_overlaps(df):
-        return df
