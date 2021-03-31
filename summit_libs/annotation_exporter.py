@@ -50,7 +50,7 @@ class AnnotationExporter:
         """
         print("Sorting annotated peaks")
         peaks_gff_df.sort_values(["seqid", "start", "end"], inplace=True)
-        print(f"Total {peaks_stats['count']} peaks predicted, exporting to GFF")
+        print(f"Total {peaks_gff_df.shape[0]} peaks predicted, exporting to GFF")
         # f"median and average lengths: {peaks_stats['median']} and {peaks_stats['mean']}, exporting to GFF")
         peaks_gff_df.to_csv(out_path, sep="\t", header=False, index=False)
 

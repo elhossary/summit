@@ -31,8 +31,9 @@ def main():
                         help="Specify a name for the annotation type")
     parser.add_argument("--separate_conditions", default=False, action='store_true',
                         help="Generates annotations per each condition separately without merging")
-    parser.add_argument("--merge_length_violation", default=False, choices=["allow", "remove", "no_merge"],
-                        help="This allows the max_len to be violated if the length after merging is longer")
+    parser.add_argument("--merge_length_violation", default=False,
+                        choices=["allow", "remove", "no_merge"],
+                        help="This gives options for reporting the annotations which violates max_len when merging")
 
     parser.add_argument("--gff_out", required=True, type=str, help="")
     args = parser.parse_args()
