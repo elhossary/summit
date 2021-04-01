@@ -101,8 +101,18 @@ class PeakAnnotator:
                     # if the coverage signal between two points was interrupted by a very low coverage
                     continue
                 pos_len = upper_loc - lower_loc + 1
-                f_bg = forward_bg_func(upper_loc)
-                r_bg = backward_bg_func(lower_loc)
+                try:
+                    f_bg = forward_bg_func(upper_loc)
+                except Exception as e:
+                    print(f"{e}")
+                    print(f"at position {lower_loc}..{upper_loc}")
+                    f_bg = 0
+                try:
+                    r_bg = backward_bg_func(lower_loc)
+                except Exception as e:
+                    print(f"{e}")
+                    print(f"at position {lower_loc}..{upper_loc}")
+                    r_bg = 0
                 bg_cov_diff = max([f_bg, r_bg]) - min([f_bg, r_bg])
                 bg_mean = mean([f_bg, r_bg])
                 enrichment = mean_cov - bg_mean
