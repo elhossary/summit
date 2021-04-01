@@ -116,8 +116,8 @@ class PeakAnnotator:
                 bg_cov_diff = max([f_bg, r_bg]) - min([f_bg, r_bg])
                 bg_mean = mean([f_bg, r_bg])
                 enrichment = mean_cov - bg_mean
-                rising_peak_cov = cov_func(lower_loc) - backward_bg_func(lower_loc)
-                falling_peak_cov = cov_func(upper_loc) - forward_bg_func(upper_loc)
+                rising_peak_cov = cov_func(lower_loc) - r_bg
+                falling_peak_cov = cov_func(upper_loc) - f_bg
                 mean_max_ratio = mean_cov / max_cov * 100
                 len_enrich_ratio = enrichment / pos_len
                 min_max_ratio = min_cov / max_cov * 100
