@@ -8,6 +8,8 @@ from scipy.signal import find_peaks
 from statistics import mean
 import sys
 import pandas as pd
+import pybedtools as pybed
+from io import StringIO
 
 
 class PeakAnnotator:
@@ -38,7 +40,7 @@ class PeakAnnotator:
             # Filter low scored and Select best from candidates
             tmp_df = self.filter_best_candidates(tmp_df)
             # Group overlaps
-            tmp_df = self.group_df_rows_by_interval(tmp_df)
+            tmp_df = self.generate_grouping_column(tmp_df)
             # Select best from overlaps
             tmp_df = self.select_annotations(tmp_df)
             # append
@@ -179,7 +181,7 @@ class PeakAnnotator:
                 df = df.append(tmp_df)
         return df
 
-    def filter_best_candidates(self, df):
+    def filter_best_candidates(self, df: pd.DataFrame):
         print(f"Filtering valid candidates for: {self.cond_name}")
         for sort_key in ["start", "end"]:
             key_sorted = df[sort_key].unique().tolist()
@@ -192,6 +194,41 @@ class PeakAnnotator:
                 df = df.append(x)
         print(f"\t {df.shape[0]} valid peak annotations for: {self.cond_name}")
         return df
+
+    def _filter_best_candidates(self, df: pd.DataFrame):
+        cols = df.columns.tolist()
+        out_df = pd.DataFrame(columns=cols)
+        print(f"Filtering valid candidates for: {self.cond_name}")
+        df_arr = df.to_numpy()
+        score_col_id = df.columns.get_loc("score")
+        for sort_key in ["start", "end"]:
+            key_sorted = df[sort_key].unique().tolist()
+            # group_df.sort_values(["start", "enrichment"], inplace=True, ascending=False)
+            key_sorted_id = df.columns.get_loc(sort_key)
+            for s in key_sorted:
+                tmp = df_arr[df_arr[:, key_sorted_id] == s]
+                max_score = np.max(tmp[:, score_col_id])
+                out_df = out_df.append(pd.DataFrame(data=tmp[tmp[:, score_col_id] == max_score], columns=cols),
+                                       ignore_index=True)
+        print(f"\t {out_df.shape[0]} valid peak annotations for: {self.cond_name}")
+        del df
+        return out_df
+
+    def generate_grouping_column(self, df_in):
+        print(f"Grouping overlapping annotations for: {self.cond_name}")
+        df_in_subset = df_in[["start", "end"]].copy()
+        df_in_subset["seqid"] = "chr1"
+        df_in_subset = df_in_subset.reindex(columns=["seqid", "start", "end"])
+        df_in_str = df_in_subset.to_csv(sep="\t", header=False, index=False)
+        bed_locs = str(pybed.BedTool(df_in_str, from_string=True).sort().merge(d=-1))
+        merged_bed_locs_df = pd.read_csv(StringIO(bed_locs), names=["seqid", "start", "end"], sep="\t")
+        df_in["group"] = None
+        group_counter = 1
+        for i in merged_bed_locs_df.index:
+            mask = df_in["start"].between(merged_bed_locs_df.at[i, "start"], merged_bed_locs_df.at[i, "end"])
+            df_in.loc[mask, ["group"]] = group_counter
+            group_counter += 1
+        return df_in
 
     def group_df_rows_by_interval(self, df_in):
         print(f"Grouping overlapping annotations for: {self.cond_name}")
