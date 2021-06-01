@@ -1,4 +1,7 @@
 import pandas as pd
+import pybedtools as pybed
+from itertools import product
+from io import StringIO
 
 
 class ConditionsMerger:
@@ -8,44 +11,36 @@ class ConditionsMerger:
         self.args = args
 
     def merge(self):
-        print("Merging annotations of all conditions")
-        df_cols = self.df.columns.tolist()
-        out_df = pd.DataFrame(columns=df_cols)
-        unmerged_df = pd.DataFrame(columns=df_cols)
-        self.df.sort_values(["seqid", "strand", "start", "end"], inplace=True, ascending=[True, True, True, False])
-        self.df.reset_index(inplace=True, drop=True)
-        out_df = out_df.append(self.df.iloc[0])
-        interval_col_id = out_df.columns.get_loc("interval")
-        start_col_id = out_df.columns.get_loc("start")
-        end_col_id = out_df.columns.get_loc("end")
-        score_col_id = out_df.columns.get_loc("score")
-        none_merge_cols = ["seqid", "strand", "start", "end", "interval", "score"]
-        merge_cols_ids = [x for x in df_cols if x not in none_merge_cols]
-        for col in merge_cols_ids:
-            out_df[col] = out_df[col].astype(str)
-        for i in self.df.index:
-            if self.df.at[i, "interval"].overlaps(out_df.iat[-1, interval_col_id]):
-                min_start = min([self.df.at[i, "start"], out_df.iat[-1, start_col_id]])
-                max_end = max([self.df.at[i, "end"], out_df.iat[-1, end_col_id]])
-                max_score = max([out_df.iat[-1, score_col_id], self.df.at[i, "score"]])
-                if max_end - min_start + 1 > self.args.max_len:
-                    if self.args.merge_length_violation != "no_merge":
-                        unmerged_df = unmerged_df.append(self.df.loc[i])
-                        self.df.drop(i, inplace=True)
-                        continue
-                    elif self.args.merge_length_violation != "remove":
-                        out_df = out_df.iloc[:-1, :]
-                        self.df.drop(i, inplace=True)
-                        continue
-                    else:
-                        pass
-                out_df.iat[-1, start_col_id] = min_start
-                out_df.iat[-1, end_col_id] = max_end
-                out_df.iat[-1, score_col_id] = max_score
-                out_df.iat[-1, interval_col_id] = pd.Interval(left=min_start, right=max_end)
-                for col in merge_cols_ids:
-                    col_id = out_df.columns.get_loc(col)
-                    out_df.iat[-1, col_id] = f"{str(out_df.iat[-1, col_id])},{str(self.df.at[i, col])}"
-            else:
-                out_df = out_df.append(self.df.loc[i])
-        return out_df, unmerged_df
+        out_df = pd.DataFrame(columns=self.df.columns.tolist())
+        seqid_list = self.df["seqid"].unique().tolist()
+        combinations = product(seqid_list, ["+", "-"])
+        basic_columns = ["seqid", "start", "end"]
+        combine_columns = \
+            [x for x in self.df.columns.tolist() if x not in basic_columns and x not in
+             ["score", "strand", "position_length"]]
+        for comb in combinations:
+            comb_df = self.df[(self.df["seqid"] == comb[0]) & (self.df["strand"] == comb[1])][basic_columns]
+            comb_df_str = comb_df.to_csv(sep="\t", header=False, index=False)
+            comb_df_bed = pybed.BedTool(comb_df_str, from_string=True)
+            merged_comb_df_bed = str(comb_df_bed.sort().merge(d=-1))
+            merged_comb_df = pd.read_csv(StringIO(merged_comb_df_bed), names=basic_columns, sep="\t")
+            merged_comb_df["strand"] = comb[1]
+            merged_comb_df["score"] = "."
+            merged_comb_df["position_length"] = merged_comb_df["end"] - merged_comb_df["start"] + 1
+            merged_comb_df["position_length"] = merged_comb_df["position_length"].astype(str)
+            for i in merged_comb_df.index:
+                tmp_df = self.df[(self.df["start"].between(merged_comb_df.at[i, "start"], merged_comb_df.at[i, "end"]))
+                                 & (self.df["seqid"] == comb[0]) & (self.df["strand"] == comb[1])]
+                for cc in combine_columns:
+                    merged_comb_df.at[i, cc] = '|'.join(set(tmp_df[cc].astype(str).tolist()))
+            out_df = out_df.append(merged_comb_df, ignore_index=True)
+            out_df.reset_index(inplace=True, drop=True)
+            out_df["len"] = out_df["end"] - out_df["start"] + 1
+        if self.args.merge_length_violation == "remove":
+            out_df = out_df[out_df["len"] <= self.args.max_len]
+        elif self.args.merge_length_violation == "merge":
+            pass
+        else:
+            print(f"Unrecognized choice {self.args.merge_length_violation} for --merge_length_violation argument")
+        out_df.drop(["len"], inplace=True, axis=1)
+        return out_df

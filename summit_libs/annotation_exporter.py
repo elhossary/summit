@@ -8,13 +8,12 @@ class AnnotationExporter:
         self.df = df
         self.args = args
     
-    def export(self, prefix=""):
+    def export(self, prefix="", mode="w") -> None:
         if self.df.shape[0] == 0:
             return None
         out_path = os.path.abspath(self.args.gff_out)
         if prefix != "":
             out_path = self._inject_prefix(self.args.gff_out, prefix)
-
         strand_letter_func = lambda x: "F" if x == "+" else "R"
         col_names = ["seqid", "source", "type", "start", "end", "score", "strand", "phase", "attributes"]
         peaks_gff_df = pd.DataFrame(columns=col_names)
@@ -52,7 +51,7 @@ class AnnotationExporter:
         peaks_gff_df.sort_values(["seqid", "start", "end"], inplace=True)
         print(f"Total {peaks_gff_df.shape[0]} peaks predicted, exporting to GFF")
         # f"median and average lengths: {peaks_stats['median']} and {peaks_stats['mean']}, exporting to GFF")
-        peaks_gff_df.to_csv(out_path, sep="\t", header=False, index=False)
+        peaks_gff_df.to_csv(out_path, sep="\t", header=False, index=False, mode=mode)
 
 
     @staticmethod
