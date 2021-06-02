@@ -34,6 +34,9 @@ class PeakAnnotator:
             tmp_df = self.generate_locs(self.arr_dict[seqid_key],
                                         True if self.wig_orient == "r" else False,
                                         self.cond_name)
+            if tmp_df is None:
+                print(f"Skipped {seqid_key}")
+                continue
             print(f"Possible {tmp_df.shape[0]} peaks for: {self.cond_name}")
             # Score the generated positions
             tmp_df = self.generate_position_score(tmp_df, ["start", "end"], False)
@@ -89,7 +92,7 @@ class PeakAnnotator:
         possible_locs_df = pd.DataFrame(data=possible_locs, columns=["rp_index", "fp_index", "rp_height", "fp_height"])
         return possible_locs_df
 
-    def generate_locs(self, coverage_array, is_reversed, cond_name) -> pd.DataFrame:
+    def generate_locs(self, coverage_array, is_reversed, cond_name) -> pd.DataFrame or None:
         print(f"Generating all possible locations for: {cond_name}")
         if self.args.invert_transcript and is_reversed:
             is_reversed = False
@@ -107,6 +110,8 @@ class PeakAnnotator:
             connected_peaks_df.apply(self._apply_row_operations, args=(coverage_array, strand, cond_name), axis=1)
         connected_peaks_df.drop(["rp_index", "fp_index"], inplace=True, axis=1)
         #print(connected_peaks_df.head(100).to_string())
+        if connected_peaks_df.shape[0] == 0:
+            return None
         connected_peaks_df["start"] = connected_peaks_df["start"].astype(int)
         connected_peaks_df["end"] = connected_peaks_df["end"].astype(int)
         return connected_peaks_df
