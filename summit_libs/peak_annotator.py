@@ -102,16 +102,9 @@ class PeakAnnotator:
             pass
         if is_reversed:
             coverage_array = np.flipud(coverage_array)
-
         connected_peaks_df = self._find_connected_peaks_indexes(coverage_array, cond_name)
-        try:
-            import swifter
-            connected_peaks_df = connected_peaks_df.swifter.apply(
-                lambda row: self._apply_row_operations(row, coverage_array, strand, cond_name), axis=1)
-        except ImportError as e:
-            print(f"{e} which used for parallel processing seems not installed, working slower on single cores instead")
-            connected_peaks_df = connected_peaks_df.apply(
-                lambda row: self._apply_row_operations(row, coverage_array, strand, cond_name), axis=1)
+        connected_peaks_df = \
+            connected_peaks_df.apply(self._apply_row_operations, args=(coverage_array, strand, cond_name), axis=1)
         connected_peaks_df.drop(["rp_index", "fp_index"], inplace=True, axis=1)
         #print(connected_peaks_df.head(100).to_string())
         connected_peaks_df["start"] = connected_peaks_df["start"].astype(int)
